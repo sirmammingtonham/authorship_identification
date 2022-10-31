@@ -10,11 +10,10 @@ from sklearn.linear_model import SGDClassifier
 
 from dict_input import dict_input
 
-# def func(a=1, b=2.0, c="c"):
-#             return a, b, c
-
-# config = dict_input("Parameters to call `func` with", func)
-st.set_page_config(layout="wide")
+try:
+    st.set_page_config(layout="wide")
+except:
+    pass
 
 orig_split = st.checkbox('Use original split?', value=True)
 split = st.slider('Custom train/test split fraction', min_value=0., max_value=1., step=0.1, value=0.5, disabled=orig_split)
@@ -22,8 +21,8 @@ seed = 42
 
 @st.cache
 def split_df(orig_split, split):
-    train_df = pd.read_csv('../data/train.csv')
-    test_df = pd.read_csv('../data/test.csv')
+    train_df = pd.read_csv('./data/train.csv')
+    test_df = pd.read_csv('./data/test.csv')
     if not orig_split:
         train_df = pd.concat([train_df, test_df])
         test_df = train_df.sample(frac=1-split, random_state=seed)
