@@ -19,7 +19,7 @@ orig_split = st.checkbox('Use original split?', value=True)
 split = st.slider('Custom train/test split fraction', min_value=0., max_value=1., step=0.1, value=0.5, disabled=orig_split)
 seed = 42
 
-@st.cache
+# @st.cache
 def split_df(orig_split, split):
     train_df = pd.read_csv('./data/train.csv')
     test_df = pd.read_csv('./data/test.csv')
@@ -34,7 +34,7 @@ train_df, test_df = split_df(orig_split, split)
 tfidf_args_template = {'ngram_range':(1, 2), 'lowercase':False, 'stop_words':'english'}
 tfidf_args = dict_input("TFIDF vectorizer args", tfidf_args_template)
 
-@st.cache
+# @st.cache
 def tfidf_corpus(df, tfidf_args):
     bag_of_words = CountVectorizer(**tfidf_args)
     counts = bag_of_words.fit_transform(df['text'])
@@ -74,7 +74,7 @@ with dfcol2:
 # y_test = test_df['label']
 # words = vectorizer.get_feature_names_out()
 
-@st.cache
+# @st.cache
 def train(train_df, test_df, tfidf_args):
     vectorizer = TfidfVectorizer(**tfidf_args)
     X_train = vectorizer.fit_transform(train_df['text'])
