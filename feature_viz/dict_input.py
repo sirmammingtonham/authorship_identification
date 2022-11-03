@@ -119,11 +119,11 @@ def dict_input(label, value, mutable_structure=False, key=None):
 
         # Check structure
         if not mutable_structure:
-            if not keys_match(new_value, state.value):
-                return json_input_text(
-                    "The last edit changed the structure of the json "
-                    "and has been reverted"
-                )
+            # if not keys_match(new_value, state.value):
+            #     return json_input_text(
+            #         "The last edit changed the structure of the json "
+            #         "and has been reverted"
+            #     )
 
             if not value_types_match(new_value, state.value):
                 return json_input_text(

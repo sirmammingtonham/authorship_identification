@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+# import spacy
+# import nltk as nltk
 
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer, TfidfVectorizer
@@ -15,24 +17,30 @@ try:
 except:
     pass
 
+
+# nlp = spacy.load('en_core_web_sm', disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer"])
+
 orig_split = st.checkbox('Use original split?', value=True)
 split = st.slider('Custom train/test split fraction', min_value=0., max_value=1., step=0.1, value=0.5, disabled=orig_split)
+remove_entities = st.checkbox('Remove entities?', value=True)
 seed = 42
 
 @st.cache
-def split_df(orig_split, split):
-    train_df = pd.read_csv('./data/train.csv')
-    test_df = pd.read_csv('./data/test.csv')
+def split_df(orig_split, split, remove_entities):
+    train_df = pd.read_csv(f'./data/train{"_noents" if remove_entities else ""}.csv')
+    test_df = pd.read_csv(f'./data/test{"_noents" if remove_entities else ""}.csv')
     if not orig_split:
         train_df = pd.concat([train_df, test_df])
         test_df = train_df.sample(frac=1-split, random_state=seed)
         train_df = train_df.drop(test_df.index)
     return train_df, test_df
 
-train_df, test_df = split_df(orig_split, split)
+train_df, test_df = split_df(orig_split, split, remove_entities)
 
-tfidf_args_template = {'ngram_range':(1, 2), 'lowercase':False, 'stop_words':'english'}
-tfidf_args = dict_input("TFIDF vectorizer args", tfidf_args_template)
+
+
+tfidf_args = {'ngram_range':(1, 2), 'lowercase':False,} #'stop_words':'english'}
+# # tfidf_args = dict_input("TFIDF vectorizer args", tfidf_args_template)
 
 @st.cache
 def tfidf_corpus(df, tfidf_args):
