@@ -1,11 +1,12 @@
 import streamlit as st
+st.set_page_config(layout="wide")
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
-# import spacy
-# import nltk as nltk
 
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer, TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import SGDClassifier
@@ -13,15 +14,8 @@ from sklearn.linear_model import SGDClassifier
 from text_annotator import text_annotator
 from dict_input import dict_input
 
-try:
-    st.set_page_config(layout="wide")
-except:
-    pass
 
-
-# nlp = spacy.load('en_core_web_sm', disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer"])
-
-
+dataset = st.radio('Select Dataset', ('C50', 'All The News'))
 
 orig_split = st.checkbox('Use original split?', value=True)
 split = st.slider('Custom train/test split fraction', min_value=0., max_value=1., step=0.1, value=0.5, disabled=orig_split)
@@ -30,16 +24,31 @@ remove_entities = st.checkbox('Remove entities?', value=True)
 seed = 42
 
 @st.cache
-def split_df(orig_split, split, remove_entities):
-    train_df = pd.read_csv(f'./data/train{"_noents" if remove_entities else ""}.csv')
-    test_df = pd.read_csv(f'./data/test{"_noents" if remove_entities else ""}.csv')
-    if not orig_split:
-        train_df = pd.concat([train_df, test_df])
-        test_df = train_df.sample(frac=1-split, random_state=seed)
-        train_df = train_df.drop(test_df.index)
-    return train_df, test_df
+def split_df(dataset, orig_split, split, remove_entities):
+    if dataset == 'C50':
+        train_df = pd.read_csv(f'./data/train{"_noents" if remove_entities else ""}.csv')
+        test_df = pd.read_csv(f'./data/test{"_noents" if remove_entities else ""}.csv')
+        if not orig_split:
+            train_df = pd.concat([train_df, test_df])
+            test_df = train_df.sample(frac=1-split, random_state=seed)
+            train_df = train_df.drop(test_df.index)
+        return train_df, test_df
+    else:
+        le = LabelEncoder()
+        train_df = pd.read_csv(f'./data/all_the_news1{"_noents" if remove_entities else ""}.csv')
+        train_df = train_df[(train_df.publication == 'Breitbart')]
+        top10_authors = train_df[['author','id']].groupby('author').count().sort_values(by='id', ascending=False).head(10).reset_index() # this == what the paper proposed
+        train_df = pd.merge(train_df, top10_authors[['author']], on='author', how='right')
+        train_df = train_df.groupby(by='author').sample(500, random_state=seed)
+        train_df = train_df[['content', 'author']]
+        train_df['author'] = le.fit_transform(train_df['author'])
+        train_df = train_df.rename(columns={'content': 'text', 'author': 'label'})
+        test_df = train_df.sample(frac=0.15 if orig_split else split, random_state=seed)
+        train_df = train_df.drop(test_df.index).reset_index(drop=True)
+        test_df = test_df.reset_index(drop=True)
+        return train_df, test_df
 
-train_df, test_df = split_df(orig_split, split, remove_entities)
+train_df, test_df = split_df(dataset, orig_split, split, remove_entities)
 
 # pd.DataFrame(list(zip([[]]*2500, [[]]*2500)), columns=['words', 'word_indexes']).to_csv('./data/annotated_train.csv', index=None)
 annotated_df = pd.read_csv('./data/annotated_train.csv')
@@ -49,7 +58,7 @@ st.header('Annotate an example')
 anno_idx = st.slider('Index to annotate', min_value=0, max_value=len(train_df_full)-1)
 def annotate(anno_idx):
     with st.form('annotate'):
-        st.caption('Select all non-style words')
+        st.caption('Select all topic/non-style words')
         words = train_df_full['text'].iloc[anno_idx].split()
         prev_annotation = annotated_df.loc[anno_idx, 'word_indexes']
         selection = text_annotator(words, selected=prev_annotation)
@@ -63,7 +72,7 @@ def annotate(anno_idx):
 annotate(anno_idx)
 
 
-tfidf_args = {'ngram_range':(1, 2), 'lowercase':False,} #'stop_words':'english'}
+tfidf_args = {'ngram_range':(1, 1), 'lowercase':False,} #'stop_words':'english'}
 # # tfidf_args = dict_input("TFIDF vectorizer args", tfidf_args_template)
 
 # @st.cache
@@ -117,7 +126,14 @@ with dfcol2:
     # test_tfidf = tfidf_corpus(test_df, tfidf_args)
     # st.dataframe(test_tfidf)
 
-idf_split = st.number_input('IDF cutoff value (remove if IDF >= value)', value=-1.)
+
+cutoff_type = st.radio('IDF Cutoff type', ('Value', 'Percentile'))
+idf_split = st.number_input('IDF cutoff value (remove if IDF >= value)', value=train_idfdf['idf'].max()+0.01, disabled=cutoff_type!='Value')
+percentile = st.number_input('Percent of IDF to remove', value=0.10, disabled=cutoff_type!='Percentile')
+if cutoff_type == 'Value':
+    st.write(f"Percentage words removed: {(train_idfdf['idf'].to_numpy() >= idf_split).sum()/len(train_idfdf['idf'])}")
+if cutoff_type == 'Percentile':
+    idf_split = np.percentile(train_idfdf['idf'].to_numpy(), (1-percentile)*100)
 
 # vectorizer = TfidfVectorizer(**tfidf_args)
 # X_train = vectorizer.fit_transform(train_df['text'])
@@ -155,8 +171,8 @@ st.header('Training')
 words, feat_nb, feat_sgd, (acc_nb, f1_nb), (acc_sgd, f1_sgd) = train(train_df, test_df, train_idfdf, tfidf_args)
 st.success(f'Multinomial Naive Bayes Accuracy: {acc_nb}', icon="📈")
 st.success(f'Multinomial Naive Bayes F1: {f1_nb}', icon="🎯")
-st.success(f'SGD Accuracy: {acc_sgd}', icon="📈")
-st.success(f'SGD F1: {f1_sgd}', icon="🎯")
+st.success(f'Logistic Regression Accuracy: {acc_sgd}', icon="📈")
+st.success(f'Logistic Regression F1: {f1_sgd}', icon="🎯")
 
 st.header('Plot feature importance')
 def impPlot(feat_nb, author, title, tfidf_df, top_k=10):
@@ -188,4 +204,4 @@ imcol1, imcol2 = st.columns(2)
 with imcol1:
     impPlot(feat_nb, author, 'NB Feature Importance, Author #', train_idfdf, top_k=top_k)
 with imcol2:
-    impPlot(feat_sgd, author, 'SGD Feature Importance, Author #', train_idfdf, top_k=top_k)
+    impPlot(feat_sgd, author, 'Logistic Regression Feature Importance, Author #', train_idfdf, top_k=top_k)
