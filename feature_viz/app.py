@@ -72,20 +72,7 @@ def annotate(anno_idx):
 annotate(anno_idx)
 
 
-tfidf_args = {'ngram_range':(1, 1), 'lowercase':False,} #'stop_words':'english'}
-# # tfidf_args = dict_input("TFIDF vectorizer args", tfidf_args_template)
-
-# @st.cache
-# def tfidf_corpus(df, tfidf_args):
-#     bag_of_words = CountVectorizer(**tfidf_args)
-#     counts = bag_of_words.fit_transform(df['text'])
-#     tfidf_transformer = TfidfTransformer(use_idf=True, sublinear_tf=True)
-#     tfidf = tfidf_transformer.fit_transform(counts)
-#     tf = counts.toarray().mean(axis=0)
-#     idf = tfidf_transformer.idf_
-#     tfidf = tfidf.toarray().mean(axis=0)
-#     output = pd.DataFrame({'word': bag_of_words.get_feature_names_out(), 'tf': tf, 'idf': idf, 'tf-idf': tfidf})
-#     return output.sort_values('tf-idf', ascending=False)
+tfidf_args = {'ngram_range':(1, 2), 'lowercase':False,} #'stop_words':'english'}
 
 @st.cache
 def idf_corpus(df, tfidf_args):
@@ -95,52 +82,50 @@ def idf_corpus(df, tfidf_args):
     return output.sort_values('idf', ascending=False)
 
 
-# def tfidf_author(author, tfidf_args):
-#     df = pd.concat([train_df, test_df])
-#     df = df[df['label'] == author]
-#     st.dataframe(tfidf_corpus(df, tfidf_args))
-
-def idf_author(author, tfidf_args):
+def idf_author(author, tfidf_args, idf_split=None):
     df = pd.concat([train_df, test_df])
     df = df[df['label'] == author]
-    st.dataframe(idf_corpus(df, tfidf_args))
+    df = idf_corpus(df, tfidf_args)
+    if idf_split:
+        df = df[df['idf'] < idf_split]
+    st.dataframe(df)
 
 dfcol1, dfcol2 = st.columns(2)
 with dfcol1:
     st.header('Train set')
     st.dataframe(train_df)
-    st.caption(f'IDF')
+    st.caption(f'Train IDF')
     train_idfdf = idf_corpus(train_df, tfidf_args)
     st.dataframe(train_idfdf)
-    # st.caption(f'TF-IDF')
-    # train_tfidf = tfidf_corpus(train_df, tfidf_args)
-    # st.dataframe(train_tfidf)
 
 with dfcol2:
     st.header('Test set')
     st.dataframe(test_df)
-    st.caption(f'IDF')
+    st.caption(f'Test IDF')
     test_idfdf = idf_corpus(test_df, tfidf_args)
     st.dataframe(test_idfdf)
-    # st.caption(f'TF-IDF')
-    # test_tfidf = tfidf_corpus(test_df, tfidf_args)
-    # st.dataframe(test_tfidf)
 
+@st.cache
+def calc_tokens_removed(train_df:pd.DataFrame, idf_split, tfidf_args):
+    full = TfidfVectorizer(**tfidf_args).build_analyzer()
+    remove_words = train_idfdf[train_idfdf['idf'] >= idf_split]['word'].tolist()
+    remove = TfidfVectorizer(**{**tfidf_args, 'stop_words':remove_words}).build_analyzer()
+    full_len = train_df['text'].apply(lambda text: len(full(text))).to_numpy()
+    remove_len = train_df['text'].apply(lambda text: len(remove(text))).to_numpy()
+    return np.mean((full_len - remove_len)/full_len)
 
 cutoff_type = st.radio('IDF Cutoff type', ('Value', 'Percentile'))
-idf_split = st.number_input('IDF cutoff value (remove if IDF >= value)', value=train_idfdf['idf'].max()+0.01, disabled=cutoff_type!='Value')
-percentile = st.number_input('Percent of IDF to remove', value=0.10, disabled=cutoff_type!='Percentile')
+idf_split = st.number_input('IDF cutoff value (remove if IDF >= value)', value=train_idfdf['idf'].max()+0.01, disabled=cutoff_type!='Value', format="%.5f")
+percentile = st.number_input('Percent of IDF to remove', value=10., disabled=cutoff_type!='Percentile', format='%.5f')
 if cutoff_type == 'Value':
-    st.write(f"Percentage words removed: {(train_idfdf['idf'].to_numpy() >= idf_split).sum()/len(train_idfdf['idf'])}")
+    st.write(f"Percentage feature types removed: {(train_idfdf['idf'].to_numpy() >= idf_split).sum()/len(train_idfdf['idf'])}")
 if cutoff_type == 'Percentile':
-    idf_split = np.percentile(train_idfdf['idf'].to_numpy(), (1-percentile)*100)
+    idf_split = np.percentile(train_idfdf['idf'].to_numpy(), 100-percentile)
+    st.write(f"IDF Cutoff: {idf_split}")
 
-# vectorizer = TfidfVectorizer(**tfidf_args)
-# X_train = vectorizer.fit_transform(train_df['text'])
-# y_train = train_df['label']
-# X_test = vectorizer.transform(test_df['text'])
-# y_test = test_df['label']
-# words = vectorizer.get_feature_names_out()
+st.write(f"Average percentage tokens removed: {calc_tokens_removed(train_df, idf_split, tfidf_args)}")
+
+
 
 @st.cache
 def train(train_df, test_df, train_idfdf, tfidf_args):
@@ -181,7 +166,6 @@ def impPlot(feat_nb, author, title, tfidf_df, top_k=10):
     idfs = []
     for word in words[top_k]:
         idfs.append(tfidf_df[tfidf_df['word']==word]['idf'])
-    # top_k = np.argpartition(features, -top_k)[-top_k:]
     figure = px.bar(x=features[top_k],
                     y=words[top_k], labels = {'x':'Importance Value', 'y':'Words', 'index':'Columns'},
                     hover_data={'idf': idfs},
@@ -197,11 +181,12 @@ def impPlot(feat_nb, author, title, tfidf_df, top_k=10):
 author = st.slider('Author', min_value=0, max_value=49, step=1)
 top_k = st.slider('Top K', min_value=1, max_value=100, step=5, value=10)
 
-st.caption(f'TF-IDF for Author #{author}')
-idf_author(author, tfidf_args)
-
 imcol1, imcol2 = st.columns(2)
 with imcol1:
+    st.caption(f'Full IDF for Author #{author}')
+    idf_author(author, tfidf_args)
     impPlot(feat_nb, author, 'NB Feature Importance, Author #', train_idfdf, top_k=top_k)
 with imcol2:
+    st.caption(f'IDF for Author #{author} (after removal)')
+    idf_author(author, tfidf_args, idf_split)
     impPlot(feat_sgd, author, 'Logistic Regression Feature Importance, Author #', train_idfdf, top_k=top_k)
