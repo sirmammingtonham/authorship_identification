@@ -35,11 +35,11 @@ def split_df(dataset, orig_split, split, remove_entities):
         return train_df, test_df
     else:
         le = LabelEncoder()
-        train_df = pd.read_csv(f'./data/all_the_news1{"_noents" if remove_entities else ""}.csv')
-        train_df = train_df[(train_df.publication == 'Breitbart')]
-        top10_authors = train_df[['author','id']].groupby('author').count().sort_values(by='id', ascending=False).head(10).reset_index() # this == what the paper proposed
-        train_df = pd.merge(train_df, top10_authors[['author']], on='author', how='right')
-        train_df = train_df.groupby(by='author').sample(500, random_state=seed)
+        train_df = pd.read_csv(f'./data/all_the_news{"_noents" if remove_entities else ""}.csv')
+        # train_df = train_df[(train_df.publication == 'Breitbart')]
+        # top10_authors = train_df[['author','id']].groupby('author').count().sort_values(by='id', ascending=False).head(10).reset_index() # this == what the paper proposed
+        # train_df = pd.merge(train_df, top10_authors[['author']], on='author', how='right')
+        # train_df = train_df.groupby(by='author').sample(500, random_state=seed)
         train_df = train_df[['content', 'author']]
         train_df['author'] = le.fit_transform(train_df['author'])
         train_df = train_df.rename(columns={'content': 'text', 'author': 'label'})
